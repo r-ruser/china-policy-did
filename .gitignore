@@ -9,10 +9,17 @@
 *.rar
 *.7z
 
+# Results and figures (禁止上传)
+07_results/
+08_manuscript/
+09_supplement/
+
+# Clean/analysis data
+04_clean_data/
+05_analysis_data/
+
 # Large CSV files
-04_clean_data/*.csv
-05_analysis_data/*.csv
-07_results/tables/*.csv
+*.csv
 
 # Python cache
 __pycache__/
@@ -29,5 +36,5 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
-# Log files (large)
-10_logs/*.log
+# Log files
+10_logs/
