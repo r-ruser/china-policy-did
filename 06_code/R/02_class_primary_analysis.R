@@ -89,6 +89,7 @@ extract_wave <- function(year, path) {
   data.frame(
     class_id = id,
     year = year,
+    source_row = seq_len(nrow(d)),
     female = ifelse(sex %in% c(1, 2), as.integer(sex == 2), NA_integer_),
     birth_year = ifelse(birth_year >= 1900 & birth_year <= year,
                         birth_year, NA_real_),
@@ -106,6 +107,49 @@ class_long <- bind_rows(lapply(names(paths), function(y) {
   extract_wave(as.integer(y), paths[[y]])
 })) |>
   filter(!is.na(class_id), nzchar(class_id))
+
+# A few released files contain conflicting duplicate person IDs within a wave.
+# Resolve these without using any outcome: retain the row that best matches the
+# person's modal sex and birth year across all available waves, breaking any
+# remaining tie by the original source-row order. Save the complete audit trail.
+stable_mode <- function(x) {
+  x <- x[!is.na(x)]
+  if (!length(x)) return(NA_real_)
+  tab <- table(x)
+  as.numeric(names(tab)[which.max(tab)])
+}
+id_stable <- class_long |>
+  group_by(class_id) |>
+  summarise(
+    stable_female = stable_mode(female),
+    stable_birth_year = stable_mode(birth_year),
+    .groups = "drop"
+  )
+duplicate_resolution <- class_long |>
+  add_count(class_id, year, name = "records_in_wave") |>
+  left_join(id_stable, by = "class_id") |>
+  mutate(
+    stable_match_score =
+      ifelse(!is.na(female) & female == stable_female, 1L, 0L) +
+      ifelse(
+        !is.na(birth_year) & birth_year == stable_birth_year, 1L, 0L
+      )
+  ) |>
+  group_by(class_id, year) |>
+  arrange(desc(stable_match_score), source_row, .by_group = TRUE) |>
+  mutate(selected_record = row_number() == 1L) |>
+  ungroup()
+fwrite(
+  duplicate_resolution |> filter(records_in_wave > 1L),
+  file.path(path_diag, "class_duplicate_id_resolution.csv")
+)
+class_long <- duplicate_resolution |>
+  filter(selected_record) |>
+  select(
+    -records_in_wave, -stable_female, -stable_birth_year,
+    -stable_match_score, -selected_record, -source_row
+  )
+stopifnot(!anyDuplicated(class_long[c("class_id", "year")]))
 
 eligible_2018_ids <- class_long |>
   filter(year == 2018, !is.na(birth_year), 2018 - birth_year >= 65) |>
