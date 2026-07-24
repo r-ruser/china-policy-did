@@ -256,7 +256,7 @@ fig_s1 <- p2a / p2b +
     caption = "The 2010 self-rated-health series is excluded because its response coding is not comparable with later waves.",
     tag_levels = "a"
   )
-save_pub_r(fig_s1, "Supplementary_Figure1_CFPS_DID_DDD", 183, 132)
+save_pub_r(fig_s1, "Supplementary_Figure_S2_CFPS_DID_DDD", 183, 132)
 
 # Figure 2 contract:
 # Core conclusion: CLASS provides primary post-policy longitudinal validation;

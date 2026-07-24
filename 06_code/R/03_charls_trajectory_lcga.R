@@ -148,13 +148,13 @@ diagnostics <- bind_rows(lapply(names(models), function(k) {
   )
 }))
 
-# Selection rule: converged solution, each class >=5%, mean posterior >=0.70
+# Selection rule: converged solution, each class >=10%, entropy >=0.70
 # after classification; choose the lowest BIC among admissible candidates.
 admissible <- diagnostics |>
   filter(convergence == 1, minimum_class_pct >= 10, entropy >= 0.70,
          classes >= 2)
 if (nrow(admissible) == 0L) {
-  stop("No admissible latent-class solution (convergence and >=5% class size).")
+  stop("No admissible latent-class solution (convergence, entropy >=0.70, and >=10% class size).")
 }
 selected_k <- admissible$classes[which.min(admissible$BIC)]
 selected <- models[[as.character(selected_k)]]
