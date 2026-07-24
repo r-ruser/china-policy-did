@@ -1,0 +1,33 @@
+# Data files (too large for git)
+*.parquet
+*.dta
+*.sav
+*.sas7bdat
+*.rds
+*.RData
+*.zip
+*.rar
+*.7z
+
+# Large CSV files
+04_clean_data/*.csv
+05_analysis_data/*.csv
+07_results/tables/*.csv
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# R temp files
+*.Rhistory
+.RData
+.Rproj.user/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files (large)
+10_logs/*.log
