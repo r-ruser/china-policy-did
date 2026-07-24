@@ -83,7 +83,7 @@ required_packages <- c(
   "dplyr", "tidyr", "stringr", "labelled",
   "fixest", "did", "WeightIt", "cobalt",
   "MatchIt", "ggplot2", "modelsummary",
-  "sf", "mice"
+  "sf", "mice", "lcmm"
 )
 
 for (pkg in required_packages) {

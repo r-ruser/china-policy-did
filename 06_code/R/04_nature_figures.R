@@ -139,10 +139,12 @@ charls_main_plot <- main |>
          !grepl("IPCW", outcome)) |>
   mutate(
     outcome = factor(outcome, levels = rev(c(
-      "Incident ADL", "Incident depression", "CESD-10 score",
+      "Incident ADL", "Incident depression", "Poor self-rated health",
+      "CESD-10 score",
       "Cognitive score (0-19)"
     ))),
-    scale_group = ifelse(grepl("Incident", as.character(outcome)),
+    scale_group = ifelse(
+      grepl("Incident|Poor self-rated", as.character(outcome)),
                          "Risk difference", "Mean-score difference")
   )
 p1b_score <- charls_main_plot |>
@@ -166,7 +168,9 @@ p1b_score <- charls_main_plot |>
 p1b_risk <- charls_main_plot |>
   filter(scale_group == "Risk difference") |>
   mutate(outcome = factor(as.character(outcome),
-                          levels = c("Incident depression", "Incident ADL"))) |>
+                          levels = c("Incident depression",
+                                     "Poor self-rated health",
+                                     "Incident ADL"))) |>
   ggplot(aes(estimate, outcome)) +
   geom_vline(xintercept = 0, linetype = "22", linewidth = 0.35,
              colour = palette["grey_mid"]) +
@@ -387,7 +391,7 @@ p3 <- charls_ddd |>
     y = NULL,
     title = "CHARLS: baseline-condition modification of age-group change",
     subtitle = "Exploratory heterogeneity, not condition-specific policy effects",
-    caption = "Modifiers are defined at the 2015 baseline; person-clustered standard errors."
+    caption = "Modifiers are defined at the 2015 baseline; person-clustered standard errors. P values are adjusted across five modifiers using the Benjamini-Hochberg FDR."
   )
 save_pub_r(p3, "Figure3_CHARLS_DDD_heterogeneity", 120, 82)
 
@@ -484,7 +488,7 @@ fig4 <- p4a + (p4b / p4c) +
   plot_layout(widths = c(1.5, 1)) +
   plot_annotation(
     title = "Exploratory CHARLS cognitive trajectory classes",
-    subtitle = "Finite-mixture growth models (1–5 classes); classes are descriptive summaries, not causal exposures.",
+    subtitle = "Latent class growth analysis (1–5 classes); classes are descriptive summaries, not causal exposures.",
     caption = "Cognition combines immediate recall, orientation and serial-7 scores (0–19), standardised to the 2011 distribution.",
     tag_levels = "a"
   )

@@ -194,6 +194,7 @@ charls_panel <- bind_rows(lapply(names(wave_year), function(w) {
   orient <- safe_numeric(charls_wide[[paste0("r", w, "orient")]])
   imrc <- safe_numeric(charls_wide[[paste0("r", w, "imrc")]])
   ser7 <- safe_numeric(charls_wide[[paste0("r", w, "ser7")]])
+  srh_alt <- safe_numeric(charls_wide[[paste0("r", w, "shlta")]])
   cog_complete <- !is.na(orient) & !is.na(imrc) & !is.na(ser7)
   data.frame(
     ID = as.character(charls_wide$ID),
@@ -206,6 +207,8 @@ charls_panel <- bind_rows(lapply(names(wave_year), function(w) {
     cesd10 = cesd,
     depression = ifelse(is.na(cesd), NA_real_, as.numeric(cesd >= 10)),
     cognition = ifelse(cog_complete, orient + imrc + ser7, NA_real_),
+    poor_srh = ifelse(srh_alt %in% 1:5,
+                      as.numeric(srh_alt >= 4), NA_real_),
     smoke = binary01(charls_wide[[paste0("r", w, "smokev")]]),
     drink = binary01(charls_wide[[paste0("r", w, "drinkev")]]),
     hypertension = binary01(charls_wide[[paste0("r", w, "hibpe")]]),
@@ -225,6 +228,7 @@ charls_bl <- charls_panel |>
     baseline_cesd10 = cesd10,
     baseline_depression = depression,
     baseline_cognition = cognition,
+    baseline_poor_srh = poor_srh,
     baseline_smoke = smoke,
     baseline_drink = drink,
     baseline_hypertension = hypertension,
@@ -252,6 +256,7 @@ charls_flow <- charls_panel |>
   summarise(
     n_observed = n_distinct(ID),
     adl_observed = sum(!is.na(any_adl)),
+    poor_srh_observed = sum(!is.na(poor_srh)),
     cesd_observed = sum(!is.na(cesd10)),
     cognition_observed = sum(!is.na(cognition)),
     .groups = "drop"
@@ -287,11 +292,15 @@ for (sp in incident_specs) {
   )
 }
 
-continuous_specs <- list(
-  list(outcome = "cesd10", label = "CESD-10 score"),
-  list(outcome = "cognition", label = "Cognitive score (0-19)")
+repeated_specs <- list(
+  list(outcome = "poor_srh", label = "Poor self-rated health",
+       estimand = "Difference-in-differences risk difference"),
+  list(outcome = "cesd10", label = "CESD-10 score",
+       estimand = "Difference-in-differences in mean change"),
+  list(outcome = "cognition", label = "Cognitive score (0-19)",
+       estimand = "Difference-in-differences in mean change")
 )
-for (sp in continuous_specs) {
+for (sp in repeated_specs) {
   dat <- complete_two_wave(charls_panel, sp$outcome)
   model <- feols(
     as.formula(sprintf("%s ~ older_2015:post | ID + year", sp$outcome)),
@@ -302,7 +311,7 @@ for (sp in continuous_specs) {
   charls_results[[length(charls_results) + 1L]] <- tidy_term(
     model, "older_2015:post|post:older_2015",
     "CHARLS target-group period change", sp$label,
-    "Difference-in-differences in mean change",
+    sp$estimand,
     "Descriptive/associational",
     "Individual and year fixed effects; coefficient is an age-group differential period change, not a policy causal effect."
   )
@@ -314,6 +323,7 @@ charls_events <- list()
 charls_pretests <- list()
 for (sp in list(
   list(outcome = "any_adl", label = "ADL prevalence"),
+  list(outcome = "poor_srh", label = "Poor self-rated health"),
   list(outcome = "depression", label = "Depression prevalence"),
   list(outcome = "cesd10", label = "CESD-10 score"),
   list(outcome = "cognition", label = "Cognitive score (0-19)")
@@ -650,6 +660,7 @@ charls_trends <- charls_panel |>
   summarise(
     n = n_distinct(ID),
     adl_prevalence = mean(any_adl, na.rm = TRUE),
+    poor_srh_prevalence = mean(poor_srh, na.rm = TRUE),
     depression_prevalence = mean(depression, na.rm = TRUE),
     cesd10_mean = mean(cesd10, na.rm = TRUE),
     cognition_mean = mean(cognition, na.rm = TRUE),
@@ -703,11 +714,31 @@ database_inventory <- data.frame(
   stringsAsFactors = FALSE
 )
 
-main_results <- bind_rows(charls_results, cfps_results)
+main_results <- bind_rows(charls_results, cfps_results) |>
+  mutate(
+    fdr_family = case_when(
+      analysis == "CFPS pilot-area DDD" &
+        outcome == "Poor self-rated health" ~
+        "CFPS poor-self-rated-health high-need DDD",
+      analysis == "CFPS labor DDD" ~ "CFPS employment DDD",
+      TRUE ~ NA_character_
+    ),
+    p_fdr = NA_real_
+  )
+for (family_name in na.omit(unique(main_results$fdr_family))) {
+  idx <- which(main_results$fdr_family == family_name)
+  main_results$p_fdr[idx] <- p.adjust(main_results$p_value[idx],
+                                      method = "BH")
+}
 charls_event_results <- bind_rows(charls_events)
 cfps_event_results <- bind_rows(cfps_events)
 pretrend_results <- bind_rows(charls_pretests, cfps_pretests)
-charls_ddd_results <- bind_rows(charls_ddd)
+charls_ddd_results <- bind_rows(charls_ddd) |>
+  mutate(
+    fdr_family = "CHARLS incident-ADL chronic-condition modifiers",
+    p_fdr = p.adjust(p_value, method = "BH"),
+    fdr_significant = p_fdr < 0.05
+  )
 
 fwrite(main_results, file.path(path_tables, "r_corrected_main_results.csv"))
 fwrite(charls_event_results, file.path(path_tables, "r_charls_event_study.csv"))

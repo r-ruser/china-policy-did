@@ -10,7 +10,7 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(tidyr)
   library(fixest)
-  library(flexmix)
+  library(lcmm)
 })
 
 options(encoding = "UTF-8")
@@ -68,11 +68,15 @@ extract_wave <- function(year, path) {
   if (year == 2018) {
     id <- as.character(d[["q1__1__open"]])
     sex <- safe_numeric(d[["a1"]])
+    birth_year <- safe_numeric(d[["a2__1__open"]])
+    education <- safe_numeric(d[["a3"]])
     srh <- safe_numeric(d[["b1"]])
     dep_vars <- paste0("e2__", 1:9)
   } else {
     id <- as.character(d[["Q1_1_open"]])
     sex <- safe_numeric(d[["A1"]])
+    birth_year <- safe_numeric(d[["A2_1_open"]])
+    education <- safe_numeric(d[["A3"]])
     srh <- safe_numeric(d[["B1"]])
     dep_vars <- paste0("E2_", 1:9)
   }
@@ -80,6 +84,10 @@ extract_wave <- function(year, path) {
     class_id = id,
     year = year,
     female = ifelse(sex %in% c(1, 2), as.integer(sex == 2), NA_integer_),
+    birth_year = ifelse(birth_year >= 1900 & birth_year <= year,
+                        birth_year, NA_real_),
+    education = ifelse(education > 0 & education < 20,
+                       education, NA_real_),
     poor_srh = ifelse(srh %in% 1:5, as.integer(srh >= 4), NA_integer_),
     srh_score = ifelse(srh %in% 1:5, srh, NA_real_),
     depression9 = score_dep9(d, dep_vars)
@@ -169,8 +177,11 @@ raw_trends <- class_long |>
   )
 fwrite(raw_trends, file.path(path_tables, "r_class_raw_trends.csv"))
 
-# LCGA-like finite mixture for common depressive symptoms. With three waves,
-# use linear class-specific trajectories; quadratic terms would be saturated.
+# Latent class growth analysis for common depressive symptoms. The within-class
+# random-effect variance is fixed at zero (random = ~ -1), which distinguishes
+# LCGA from a growth-mixture model with class-specific random effects. With
+# three waves, use linear class-specific trajectories; quadratic terms would be
+# saturated.
 traj <- class_panel |>
   filter(!is.na(depression9)) |>
   group_by(class_id) |>
@@ -179,35 +190,8 @@ traj <- class_panel |>
   mutate(time = year - 2018)
 
 id_map <- traj |> distinct(class_id) |> mutate(ID_num = row_number())
-traj <- left_join(traj, id_map, by = "class_id")
-
-models <- list()
-for (k in 1:5) {
-  cat("Fitting CLASS depression trajectory:", k, "classes\n")
-  if (k == 1L) {
-    models[[as.character(k)]] <- flexmix(
-      depression9 ~ time | ID_num,
-      data = traj,
-      k = 1,
-      model = FLXMRglm(family = "gaussian"),
-      control = list(iter.max = 300, minprior = 0.01, verbose = 0)
-    )
-  } else {
-    candidates <- stepFlexmix(
-      depression9 ~ time | ID_num,
-      data = traj,
-      k = k,
-      nrep = 3,
-      model = FLXMRglm(family = "gaussian"),
-      control = list(iter.max = 300, minprior = 0.01, verbose = 0)
-    )
-    models[[as.character(k)]] <- if (inherits(candidates, "stepFlexmix")) {
-      getModel(candidates, "BIC")
-    } else {
-      candidates
-    }
-  }
-}
+traj <- left_join(traj, id_map, by = "class_id") |>
+  arrange(ID_num, year)
 
 entropy_value <- function(probs) {
   probs <- pmax(as.matrix(probs), 1e-12)
@@ -217,42 +201,83 @@ entropy_value <- function(probs) {
   1 + sum(probs * log(probs)) / (n * log(k))
 }
 
+posterior_table <- function(model, k) {
+  if (k == 1L) {
+    return(data.frame(
+      ID_num = sort(unique(traj$ID_num)),
+      class = 1L,
+      prob1 = 1
+    ))
+  }
+  pp <- as.data.frame(model$pprob)
+  names(pp)[1] <- "ID_num"
+  pp
+}
+
+cat("Fitting CLASS depression trajectory: 1 class\n")
+m1 <- hlme(
+  fixed = depression9 ~ time,
+  random = ~ -1,
+  subject = "ID_num",
+  ng = 1,
+  data = traj,
+  maxiter = 500,
+  verbose = FALSE
+)
+if (m1$conv != 1) stop("The one-class CLASS LCGA did not converge.")
+
+models <- list(`1` = m1)
+for (k in 2:5) {
+  cat("Fitting CLASS depression trajectory:", k, "classes\n")
+  model_k <- gridsearch(
+    rep = 10,
+    maxiter = 30,
+    minit = m1,
+    hlme(
+      fixed = depression9 ~ time,
+      mixture = ~ time,
+      random = ~ -1,
+      subject = "ID_num",
+      ng = k,
+      nwg = FALSE,
+      data = traj,
+      maxiter = 500,
+      verbose = FALSE
+    )
+  )
+  models[[as.character(k)]] <- model_k
+}
+
 diagnostics <- bind_rows(lapply(names(models), function(k) {
   m <- models[[k]]
-  cls <- clusters(m)
-  post <- posterior(m)
-  tmp <- data.frame(ID_num = traj$ID_num, class = cls, post) |>
-    distinct(ID_num, .keep_all = TRUE)
+  tmp <- posterior_table(m, as.integer(k))
+  prob_cols <- grep("^prob", names(tmp), value = TRUE)
   tab <- prop.table(table(tmp$class))
   data.frame(
     classes = as.integer(k),
-    log_likelihood = as.numeric(logLik(m)),
-    AIC = AIC(m),
-    BIC = BIC(m),
-    convergence = as.integer(m@converged),
-    entropy = entropy_value(tmp[, setdiff(names(tmp), c("ID_num", "class")),
-                                drop = FALSE]),
+    log_likelihood = m$loglik,
+    AIC = m$AIC,
+    BIC = m$BIC,
+    convergence = as.integer(m$conv == 1),
+    entropy = entropy_value(tmp[, prob_cols, drop = FALSE]),
     minimum_class_pct = 100 * min(tab),
     maximum_class_pct = 100 * max(tab)
   )
 }))
 
+cat("\nCLASS trajectory candidate diagnostics\n")
+print(diagnostics)
+
 admissible <- diagnostics |>
-  filter(convergence == 1, minimum_class_pct >= 10, entropy >= 0.75,
-         classes >= 3)
+  filter(convergence == 1, minimum_class_pct >= 10, classes >= 2)
 if (!nrow(admissible)) {
   stop("No admissible CLASS trajectory solution.")
 }
-# Prefer the smallest clinically interpretable solution meeting classification
-# standards. BIC can keep improving by splitting near-parallel severity levels;
-# the primary trajectory solution therefore avoids that over-extraction.
-selected_k <- min(admissible$classes)
+# Among adequately classified solutions, use BIC for the primary selection.
+selected_k <- admissible$classes[which.min(admissible$BIC)]
 selected <- models[[as.character(selected_k)]]
-cls <- clusters(selected)
-post <- posterior(selected)
-pp <- data.frame(ID_num = traj$ID_num, class = cls, post) |>
-  distinct(ID_num, .keep_all = TRUE)
-prob_cols <- setdiff(names(pp), c("ID_num", "class"))
+pp <- posterior_table(selected, selected_k)
+prob_cols <- grep("^prob", names(pp), value = TRUE)
 pp$mean_posterior <- apply(pp[, prob_cols, drop = FALSE], 1, max)
 membership <- pp |>
   left_join(id_map, by = "ID_num") |>
@@ -292,6 +317,116 @@ quality <- membership |>
     .groups = "drop"
   )
 
+# One-step latent-class regression relates pre-specified 2018 baseline factors
+# to latent trajectory membership while retaining classification uncertainty in
+# the likelihood. These are associations, not causal effects.
+assoc_traj <- traj |>
+  mutate(
+    age5 = (2018 - birth_year - 70) / 5,
+    poor_srh_2018 = poor_srh
+  ) |>
+  filter(
+    complete.cases(age5, female, education, poor_srh_2018)
+  ) |>
+  group_by(ID_num) |>
+  filter(n_distinct(year) >= 2) |>
+  ungroup() |>
+  arrange(ID_num, year)
+
+assoc_m1 <- hlme(
+  fixed = depression9 ~ time,
+  random = ~ -1,
+  subject = "ID_num",
+  ng = 1,
+  data = assoc_traj,
+  maxiter = 500,
+  verbose = FALSE
+)
+association_model <- gridsearch(
+  rep = 10,
+  maxiter = 30,
+  minit = assoc_m1,
+  hlme(
+    fixed = depression9 ~ time,
+    mixture = ~ time,
+    random = ~ -1,
+    classmb = ~ age5 + female + education + poor_srh_2018,
+    subject = "ID_num",
+    ng = selected_k,
+    nwg = FALSE,
+    data = assoc_traj,
+    maxiter = 500,
+    verbose = FALSE
+  )
+)
+if (association_model$conv != 1) {
+  stop("The CLASS baseline-factor latent-class regression did not converge.")
+}
+
+assoc_pp <- as.data.frame(association_model$pprob)
+names(assoc_pp)[1] <- "ID_num"
+assoc_profiles <- assoc_traj |>
+  left_join(assoc_pp[, c("ID_num", "class")], by = "ID_num") |>
+  group_by(class, year) |>
+  summarise(mean_score = mean(depression9), .groups = "drop")
+assoc_order <- assoc_profiles |>
+  filter(year == max(year)) |>
+  arrange(mean_score) |>
+  pull(class)
+assoc_labels <- setNames(
+  c("Low-stable", "Moderate", "High/persistent", "Increasing", "Residual")[
+    seq_along(assoc_order)
+  ],
+  assoc_order
+)
+
+tidy_classmb <- function(model, labels, predictor_labels) {
+  beta <- estimates(model)
+  vc <- VarCov(model)
+  se <- sqrt(diag(vc))
+  idx <- unlist(lapply(names(predictor_labels), function(v) {
+    grep(paste0("^", v, " class[0-9]+$"), names(beta))
+  }))
+  cls <- as.integer(sub(".* class", "", names(beta)[idx]))
+  out <- data.frame(
+    predictor = sub(" class[0-9]+$", "", names(beta)[idx]),
+    latent_class = cls,
+    reference_class = model$ng,
+    log_odds = beta[idx],
+    std_error = se[idx],
+    stringsAsFactors = FALSE
+  )
+  out <- out |>
+    mutate(
+      predictor_label = unname(predictor_labels[predictor]),
+      contrast = paste0(
+        labels[as.character(latent_class)], " vs ",
+        labels[as.character(reference_class)]
+      ),
+      odds_ratio = exp(log_odds),
+      conf_low = exp(log_odds - 1.96 * std_error),
+      conf_high = exp(log_odds + 1.96 * std_error),
+      p_value = 2 * pnorm(abs(log_odds / std_error), lower.tail = FALSE)
+    ) |>
+    group_by(contrast) |>
+    mutate(p_fdr = p.adjust(p_value, method = "BH")) |>
+    ungroup() |>
+    select(predictor, predictor_label, contrast, odds_ratio,
+           conf_low, conf_high, p_value, p_fdr)
+  out
+}
+
+association_results <- tidy_classmb(
+  association_model,
+  assoc_labels,
+  c(
+    age5 = "Age, per 5 years",
+    female = "Female sex",
+    education = "Education, per category",
+    poor_srh_2018 = "Poor self-rated health in 2018"
+  )
+)
+
 set.seed(20260724)
 sample_ids <- membership |>
   group_by(class) |>
@@ -307,6 +442,8 @@ fwrite(quality, file.path(path_diag, "r_class_lcga_quality.csv"))
 fwrite(membership, file.path(path_tables, "r_class_lcga_membership.csv"))
 fwrite(profiles, file.path(path_tables, "r_class_lcga_profiles.csv"))
 fwrite(spaghetti, file.path(path_tables, "r_class_lcga_spaghetti.csv"))
+fwrite(association_results,
+       file.path(path_tables, "r_class_lcga_associations.csv"))
 
 saveRDS(
   list(
@@ -314,6 +451,7 @@ saveRDS(
     trajectory_models = models,
     selected_k = selected_k,
     selected_model = selected,
+    association_model = association_model,
     session = sessionInfo()
   ),
   file.path(path_models, "r_class_primary_models.rds")
@@ -325,4 +463,6 @@ cat("\nCLASS trajectory diagnostics\n")
 print(diagnostics)
 cat("\nSelected classes:", selected_k, "\n")
 print(quality)
+cat("\nBaseline-factor associations with CLASS trajectory membership\n")
+print(association_results)
 cat("\nCompleted:", format(Sys.time()), "\n")
