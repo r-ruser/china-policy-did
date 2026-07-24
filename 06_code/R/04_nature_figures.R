@@ -27,7 +27,9 @@ required_files <- c(
   "r_charls_ddd_results.csv",
   "r_class_longitudinal_changes.csv",
   "r_class_lcga_profiles.csv",
+  "r_class_lcga_associations.csv",
   "r_charls_lcga_trajectory_profiles.csv",
+  "r_charls_lcga_associations.csv",
   "r_charls_lcga_spaghetti_sample.csv"
 )
 missing_files <- required_files[!file.exists(file.path(path_tables, required_files))]
@@ -129,7 +131,7 @@ p1a <- ggplot(adl_event, aes(year, estimate)) +
   scale_y_continuous(labels = label_percent(accuracy = 0.1)) +
   labs(
     x = "Survey year",
-    y = "Older–younger differential change (95% CI)",
+    y = "Age-group differential change (95% CI)",
     title = "ADL event-study diagnostic",
     subtitle = pre_label
   )
@@ -178,7 +180,7 @@ p1b_risk <- charls_main_plot |>
                 orientation = "y", width = 0.15, linewidth = 0.55) +
   geom_point(size = 2.1, colour = palette["red"]) +
   labs(
-    x = "Older x post coefficient (95% CI)",
+    x = "Age 75+ x post coefficient (95% CI)",
     y = NULL,
     subtitle = "Risk difference"
   )
@@ -191,7 +193,7 @@ fig1 <- p1a + p1b +
   plot_annotation(
     title = "CHARLS: target-group changes around nationwide policy expansion",
     subtitle = "Estimates describe age-group period differences; they do not identify a national policy effect.",
-    caption = "Older: age 60–69 in 2015; younger: age 50–59 in 2015. Baseline-free samples are used only for incident outcomes.",
+    caption = "All participants were aged 65 years or older in 2015; the contrast compares age 75+ with age 65–74. Baseline-free samples are used only for incident outcomes.",
     tag_levels = "a"
   )
 save_pub_r(fig1, "Figure1_CHARLS_corrected_DID", 183, 105)
@@ -228,13 +230,13 @@ ddd_plot <- main |>
   filter(grepl("DDD", analysis)) |>
   mutate(
     label = case_when(
-      analysis == "CFPS labor DDD" ~ "Employment: older household",
+      analysis == "CFPS labor DDD" ~ "Employment: age 75+",
       grepl("Age 75\\+", estimand) & !grepl("or", estimand) ~ "Poor SRH: age 75+",
       TRUE ~ "Poor SRH: high-need combined"
     ),
     label = factor(label, levels = rev(c(
       "Poor SRH: age 75+", "Poor SRH: high-need combined",
-      "Employment: older household"
+      "Employment: age 75+"
     )))
   )
 p2b <- ggplot(ddd_plot, aes(estimate, label)) +
@@ -325,6 +327,7 @@ p_class_b <- class_change |>
     outcome = recode(
       outcome,
       "Common 9-item depressive symptom score" = "Depressive symptoms",
+      "Need help with activities of daily living" = "ADL help",
       "Poor self-rated health" = "Poor self-rated health"
     )
   ) |>
@@ -337,6 +340,7 @@ p_class_b <- class_change |>
   facet_wrap(~outcome, scales = "free_y", ncol = 1) +
   scale_colour_manual(values = c(
     "Poor self-rated health" = palette[["navy"]],
+    "ADL help" = palette[["teal"]],
     "Depressive symptoms" = palette[["red"]]
   ), guide = "none") +
   scale_x_continuous(breaks = c(2020, 2023)) +
@@ -346,10 +350,12 @@ p_class_b <- class_change |>
     title = "Post-policy longitudinal change"
   )
 
+class_selected_k <- n_distinct(class_quality$class)
 p_class_c <- class_selection |>
-  mutate(selection_status = ifelse(classes == 3, "Selected", "Other")) |>
+  mutate(selection_status = ifelse(classes == class_selected_k,
+                                   "Selected", "Other")) |>
   ggplot(aes(classes, BIC)) +
-  geom_vline(xintercept = 3, linetype = "22", linewidth = 0.4,
+  geom_vline(xintercept = class_selected_k, linetype = "22", linewidth = 0.4,
              colour = palette["teal"]) +
   geom_line(linewidth = 0.55, colour = palette["grey_dark"]) +
   geom_point(aes(colour = selection_status),
@@ -362,13 +368,13 @@ p_class_c <- class_selection |>
     x = "Number of classes",
     y = "BIC",
     title = "Trajectory-model diagnostics",
-    subtitle = "Three-class primary solution (green)"
+    subtitle = paste0(class_selected_k, "-class primary solution (green)")
   )
 
 fig2 <- p_class_a + (p_class_b / p_class_c) +
   plot_layout(widths = c(1.5, 1)) +
   plot_annotation(
-    title = "CLASS: health trajectories among older adults, 2018-2023",
+    title = "CLASS: health trajectories among adults aged 65 years or older, 2018-2023",
     subtitle = "Primary longitudinal validation; all waves are post-policy and do not identify a policy effect.",
     caption = "The depressive-symptom score uses nine identically worded items across all three waves; positive-affect items are reverse scored.",
     tag_levels = "a"
@@ -448,10 +454,12 @@ p4a <- ggplot() +
   ) +
   theme(legend.position = "bottom")
 
+charls_selected_k <- n_distinct(quality$class)
 p4b <- selection |>
-  mutate(selection_status = ifelse(classes == 2, "Selected", "Other")) |>
+  mutate(selection_status = ifelse(classes == charls_selected_k,
+                                   "Selected", "Other")) |>
   ggplot(aes(classes, BIC)) +
-  geom_vline(xintercept = 2, linetype = "22", linewidth = 0.4,
+  geom_vline(xintercept = charls_selected_k, linetype = "22", linewidth = 0.4,
              colour = palette["teal"]) +
   geom_line(linewidth = 0.55, colour = palette["grey_dark"]) +
   geom_point(aes(colour = selection_status),
@@ -487,11 +495,80 @@ p4c <- quality |>
 fig4 <- p4a + (p4b / p4c) +
   plot_layout(widths = c(1.5, 1)) +
   plot_annotation(
-    title = "Exploratory CHARLS cognitive trajectory classes",
-    subtitle = "Latent class growth analysis (1–5 classes); classes are descriptive summaries, not causal exposures.",
+    title = "CHARLS cognitive trajectory classes among adults aged 65 years or older",
+    subtitle = "Latent class growth analysis (1–4 classes); classes are descriptive summaries, not causal exposures.",
     caption = "Cognition combines immediate recall, orientation and serial-7 scores (0–19), standardised to the 2011 distribution.",
     tag_levels = "a"
   )
 save_pub_r(fig4, "Figure4_CHARLS_LCGA_trajectories", 183, 112)
+
+# Figure 5: one-step baseline-factor associations with latent trajectory
+# membership. Classification uncertainty is retained in the likelihood, and
+# multiplicity is controlled within each class contrast.
+assoc_class <- fread(file.path(path_tables, "r_class_lcga_associations.csv")) |>
+  mutate(cohort = "CLASS depressive symptoms")
+assoc_charls <- fread(file.path(path_tables, "r_charls_lcga_associations.csv")) |>
+  mutate(cohort = "CHARLS cognition")
+assoc <- bind_rows(assoc_charls, assoc_class) |>
+  mutate(
+    predictor_label = recode(
+      predictor_label,
+      "Age, per 5 years" = "Age (per 5 years)",
+      "Female sex" = "Female",
+      "Education, per category" = "Education (per category)",
+      "Poor self-rated health in 2011" = "Poor self-rated health",
+      "Poor self-rated health in 2018" = "Poor self-rated health"
+    ),
+    predictor_label = factor(
+      predictor_label,
+      levels = rev(c(
+        "Age (per 5 years)", "Female", "Education (per category)",
+        "Poor self-rated health"
+      ))
+    ),
+    panel_label = paste(cohort, contrast, sep = "\n"),
+    fdr_status = ifelse(p_fdr < 0.05, "FDR-adjusted P < 0.05",
+                        "FDR-adjusted P >= 0.05")
+  )
+
+p5 <- ggplot(assoc, aes(odds_ratio, predictor_label, colour = fdr_status)) +
+  geom_vline(xintercept = 1, linetype = "22", linewidth = 0.35,
+             colour = palette["grey_mid"]) +
+  geom_errorbar(
+    aes(xmin = conf_low, xmax = conf_high),
+    orientation = "y", width = 0.16, linewidth = 0.55
+  ) +
+  geom_point(size = 2) +
+  facet_wrap(~panel_label, scales = "free_x", ncol = 2) +
+  scale_x_log10(
+    breaks = c(0.05, 0.1, 0.25, 0.5, 1, 2, 4),
+    labels = label_number(accuracy = 0.01)
+  ) +
+  scale_colour_manual(
+    values = c(
+      "FDR-adjusted P < 0.05" = palette[["teal"]],
+      "FDR-adjusted P >= 0.05" = palette[["grey_mid"]]
+    ),
+    name = NULL
+  ) +
+  labs(
+    x = "Odds ratio for trajectory-class membership (log scale)",
+    y = NULL,
+    title = "Baseline factors associated with trajectory-class membership",
+    subtitle = paste0(
+      "Adults aged 65 years or older; one-step latent-class regression with ",
+      "classification uncertainty retained"
+    ),
+    caption = paste0(
+      "Benjamini-Hochberg FDR correction was applied within each class ",
+      "contrast. Associations are not causal effects."
+    )
+  ) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 6.4, lineheight = 0.95),
+    axis.text.y = element_text(size = 6.5)
+  )
+save_pub_r(p5, "Figure5_trajectory_class_associations", 183, 118)
 
 cat("All Nature-style figures exported to:", path_figures, "\n")

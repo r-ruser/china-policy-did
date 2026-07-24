@@ -13,6 +13,8 @@ suppressPackageStartupMessages({
 
 options(encoding = "UTF-8")
 set.seed(20260724)
+n_cores <- parallel::detectCores(logical = TRUE)
+if (is.na(n_cores) || n_cores < 1L) n_cores <- 1L
 
 project_root <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
 path_tables <- file.path(project_root, "07_results", "tables")
@@ -34,6 +36,7 @@ on.exit({
 
 cat("Exploratory CHARLS latent class growth analysis\n")
 cat("Started:", format(Sys.time()), "\n")
+cat("Logical CPU cores used:", n_cores, "\n")
 
 charls_path <- "E:/公共数据库/7国老年数据库/CHARLS_China/H_CHARLS_D_Data.dta"
 stopifnot(file.exists(charls_path))
@@ -60,7 +63,7 @@ d <- d |>
       NA_integer_
     )
   ) |>
-  filter(age_2015 >= 50, age_2015 <= 69, safe_numeric(inw3) == 1)
+  filter(age_2015 >= 65, safe_numeric(inw3) == 1)
 
 wave_year <- c(`1` = 2011, `2` = 2013, `3` = 2015, `4` = 2018)
 long <- bind_rows(lapply(names(wave_year), function(w) {
@@ -164,7 +167,7 @@ fit_candidate <- function(k) {
       rep = 4,
       maxiter = 20,
       minit = m1,
-      cl = 2,
+      cl = n_cores,
       hlme(
         fixed = cognition_z ~ time + I(time^2),
         mixture = ~ time + I(time^2),
@@ -280,7 +283,7 @@ if (any(quality_by_class$mean_posterior < 0.70)) {
 # One-step latent-class regression relates pre-specified 2011 baseline factors
 # to latent trajectory membership while retaining classification uncertainty.
 assoc_long <- long |>
-  mutate(age5 = (age_2011 - 60) / 5) |>
+  mutate(age5 = (age_2015 - 70) / 5) |>
   filter(complete.cases(age5, female, education, poor_srh_2011)) |>
   group_by(ID_num) |>
   filter(n_distinct(year) >= 3) |>
@@ -301,7 +304,7 @@ assoc_call <- substitute(
     rep = 4,
     maxiter = 20,
     minit = assoc_m1,
-    cl = 2,
+    cl = n_cores,
     hlme(
       fixed = cognition_z ~ time + I(time^2),
       mixture = ~ time + I(time^2),

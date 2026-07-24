@@ -13,6 +13,9 @@ suppressPackageStartupMessages({
 
 options(encoding = "UTF-8")
 set.seed(20260724)
+n_cores <- parallel::detectCores(logical = TRUE)
+if (is.na(n_cores) || n_cores < 1L) n_cores <- 1L
+setFixest_nthreads(n_cores)
 
 project_root <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
 path_tables <- file.path(project_root, "07_results", "tables")
@@ -35,6 +38,7 @@ on.exit({
 cat("Epidemiology-corrected DID/DDD analysis\n")
 cat("Started:", format(Sys.time()), "\n")
 cat("Project:", project_root, "\n\n")
+cat("Logical CPU cores used by fixest:", n_cores, "\n\n")
 
 charls_path <- "E:/公共数据库/7国老年数据库/CHARLS_China/H_CHARLS_D_Data.dta"
 stopifnot(file.exists(charls_path))
@@ -181,10 +185,10 @@ charls_wide <- read_dta(charls_path)
 charls_wide <- charls_wide |>
   mutate(
     age_2015 = 2015 - safe_numeric(rabyear),
-    older_2015 = as.integer(age_2015 >= 60),
+    older_2015 = as.integer(age_2015 >= 75),
     female = as.integer(safe_numeric(ragender) == 2)
   ) |>
-  filter(age_2015 >= 50, age_2015 <= 69, safe_numeric(inw3) == 1)
+  filter(age_2015 >= 65, safe_numeric(inw3) == 1)
 
 wave_year <- c(`1` = 2011, `2` = 2013, `3` = 2015, `4` = 2018)
 charls_panel <- bind_rows(lapply(names(wave_year), function(w) {
@@ -338,7 +342,7 @@ for (sp in list(
   charls_models[[paste0("charls_event_", sp$outcome)]] <- model
   charls_events[[length(charls_events) + 1L]] <- event_terms(
     model, "CHARLS event-study diagnostic", sp$label,
-    "Older (60-69 in 2015) x survey year",
+    "Age 75+ vs 65-74 years in 2015 x survey year",
     "Diagnostic only", 2015
   )
   charls_pretests[[length(charls_pretests) + 1L]] <- joint_pretrend(
@@ -445,7 +449,8 @@ cfps_elderly <- fread(cfps_elderly_path, encoding = "UTF-8") |>
     ),
     treat_high_age75 = treat * high_need_age75,
     treat_high_combined = treat * high_need_combined
-  )
+  ) |>
+  filter(baseline_age >= 65)
 
 cfps_elderly_main <- cfps_elderly |>
   filter(wave %in% c(2012, 2014, 2018))
@@ -548,7 +553,7 @@ for (spec in list(
   }
 }
 
-# CFPS labor: fixed 2014 working-age cohort, not time-varying age eligibility.
+# CFPS labor: fixed cohort aged 65 years or older in 2014.
 cfps_panel <- fread(cfps_panel_path, encoding = "UTF-8") |>
   mutate(
     pid = as.character(pid),
@@ -559,17 +564,17 @@ cfps_baseline <- fread(cfps_baseline_path, encoding = "UTF-8") |>
   transmute(
     pid = as.character(pid),
     working_age_2014,
-    older_household_2014,
     baseline_age,
     baseline_female
   )
 cfps_labor <- cfps_panel |>
   left_join(cfps_baseline, by = "pid") |>
-  filter(working_age_2014 == 1, wave %in% c(2010, 2012, 2014, 2018)) |>
+  filter(baseline_age >= 65, wave %in% c(2010, 2012, 2014, 2018)) |>
   mutate(
     treat = treat_area,
     city_cluster = city_code,
-    treat_older_household = treat * older_household_2014
+    high_age75 = as.integer(baseline_age >= 75),
+    treat_high_age75 = treat * high_age75
   )
 
 cfps_labor_event <- feols(
@@ -600,35 +605,35 @@ cfps_results[[length(cfps_results) + 1L]] <- tidy_term(
   "CFPS pilot-area DID", "Employment",
   "Pilot-area difference-in-differences risk difference",
   "Exploratory/associational",
-  "Fixed 2014 working-age cohort; individual and year fixed effects; city-clustered SE."
+  "Fixed cohort aged 65 years or older in 2014; individual and year fixed effects; city-clustered SE."
 )
 
 cfps_labor_ddd <- feols(
   employed_corrected ~ i(wave, treat, ref = 2014) +
-    i(wave, older_household_2014, ref = 2014) +
-    i(wave, treat_older_household, ref = 2014) | pid + wave,
+    i(wave, high_age75, ref = 2014) +
+    i(wave, treat_high_age75, ref = 2014) | pid + wave,
   data = cfps_labor,
   cluster = ~city_cluster
 )
 cfps_models$cfps_labor_ddd <- cfps_labor_ddd
 labor_ddd_event <- event_terms(
   cfps_labor_ddd, "CFPS labor DDD event study", "Employment",
-  "Pilot area x older household x survey year",
+  "Pilot area x age 75+ x survey year",
   "Exploratory triple difference", 2014
 )
 labor_ddd_event <- labor_ddd_event[
   labor_ddd_event$term == "Reference" |
-    grepl("treat_older_household", labor_ddd_event$term, fixed = TRUE), ]
+    grepl("treat_high_age75", labor_ddd_event$term, fixed = TRUE), ]
 cfps_events[[length(cfps_events) + 1L]] <- labor_ddd_event
 cfps_pretests[[length(cfps_pretests) + 1L]] <- joint_pretrend(
   cfps_labor_ddd, c(2010, 2012),
-  "CFPS employment DDD joint pre-trend"
+  "CFPS employment DDD (age 75+) joint pre-trend"
 )
 
 ct_labor <- as.data.frame(coeftable(cfps_labor_ddd))
 ct_labor$term <- rownames(ct_labor)
 target_labor <- ct_labor[grepl("::2018", ct_labor$term) &
-                           grepl("treat_older_household", ct_labor$term,
+                           grepl("treat_high_age75", ct_labor$term,
                                  fixed = TRUE), , drop = FALSE]
 if (nrow(target_labor) == 1L) {
   est <- target_labor[[1]][1]
@@ -636,7 +641,7 @@ if (nrow(target_labor) == 1L) {
   cfps_results[[length(cfps_results) + 1L]] <- data.frame(
     analysis = "CFPS labor DDD",
     outcome = "Employment",
-    estimand = "2018 triple difference: pilot area x older household",
+    estimand = "2018 triple difference: pilot area x age 75+",
     term = target_labor$term,
     estimate = est,
     std_error = se_,
@@ -646,7 +651,7 @@ if (nrow(target_labor) == 1L) {
     n_obs = nobs(cfps_labor_ddd),
     n_id = n_distinct(cfps_labor$pid),
     evidence_grade = "Exploratory triple difference",
-    notes = "Fixed 2014 working-age cohort; pre-trend joint test required before interpretation.",
+    notes = "Fixed cohort aged 65 years or older in 2014; pre-trend joint test required before interpretation.",
     stringsAsFactors = FALSE
   )
 }
@@ -677,7 +682,7 @@ cfps_health_trends <- cfps_elderly_main |>
   )
 
 cfps_labor_trends <- cfps_labor |>
-  group_by(wave, treat, older_household_2014) |>
+  group_by(wave, treat, high_age75) |>
   summarise(
     n = n_distinct(pid),
     employment = mean(employed_corrected, na.rm = TRUE),

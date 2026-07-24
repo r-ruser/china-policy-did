@@ -15,6 +15,9 @@ suppressPackageStartupMessages({
 
 options(encoding = "UTF-8")
 set.seed(20260724)
+n_cores <- parallel::detectCores(logical = TRUE)
+if (is.na(n_cores) || n_cores < 1L) n_cores <- 1L
+setFixest_nthreads(n_cores)
 
 project_root <- normalizePath(getwd(), winslash = "/", mustWork = TRUE)
 path_tables <- file.path(project_root, "07_results", "tables")
@@ -36,6 +39,7 @@ on.exit({
 
 cat("CLASS primary longitudinal analysis\n")
 cat("Started:", format(Sys.time()), "\n")
+cat("Logical CPU cores used:", n_cores, "\n")
 
 class_root <- "E:/公共数据库/中国数据库/CLASS数据全/两种格式/STATA"
 paths <- c(
@@ -71,6 +75,7 @@ extract_wave <- function(year, path) {
     birth_year <- safe_numeric(d[["a2__1__open"]])
     education <- safe_numeric(d[["a3"]])
     srh <- safe_numeric(d[["b1"]])
+    adl_help <- safe_numeric(d[["b5"]])
     dep_vars <- paste0("e2__", 1:9)
   } else {
     id <- as.character(d[["Q1_1_open"]])
@@ -78,6 +83,7 @@ extract_wave <- function(year, path) {
     birth_year <- safe_numeric(d[["A2_1_open"]])
     education <- safe_numeric(d[["A3"]])
     srh <- safe_numeric(d[["B1"]])
+    adl_help <- safe_numeric(d[["B5"]])
     dep_vars <- paste0("E2_", 1:9)
   }
   data.frame(
@@ -89,6 +95,8 @@ extract_wave <- function(year, path) {
     education = ifelse(education > 0 & education < 20,
                        education, NA_real_),
     poor_srh = ifelse(srh %in% 1:5, as.integer(srh >= 4), NA_integer_),
+    adl_help = ifelse(adl_help %in% 1:2,
+                      as.integer(adl_help == 1), NA_integer_),
     srh_score = ifelse(srh %in% 1:5, srh, NA_real_),
     depression9 = score_dep9(d, dep_vars)
   )
@@ -98,6 +106,11 @@ class_long <- bind_rows(lapply(names(paths), function(y) {
   extract_wave(as.integer(y), paths[[y]])
 })) |>
   filter(!is.na(class_id), nzchar(class_id))
+
+eligible_2018_ids <- class_long |>
+  filter(year == 2018, !is.na(birth_year), 2018 - birth_year >= 65) |>
+  distinct(class_id)
+class_long <- semi_join(class_long, eligible_2018_ids, by = "class_id")
 
 id_counts <- class_long |>
   distinct(class_id, year) |>
@@ -109,6 +122,7 @@ flow <- class_long |>
   summarise(
     n = n_distinct(class_id),
     poor_srh_observed = sum(!is.na(poor_srh)),
+    adl_help_observed = sum(!is.na(adl_help)),
     depression_observed = sum(!is.na(depression9)),
     repeated_ids = sum(waves_observed >= 2),
     .groups = "drop"
@@ -132,6 +146,11 @@ fwrite(overlap, file.path(path_diag, "class_id_overlap.csv"))
 class_panel <- class_long |> filter(waves_observed >= 2)
 model_srh <- feols(
   poor_srh ~ i(year, ref = 2018) | class_id,
+  data = class_panel,
+  cluster = ~class_id
+)
+model_adl <- feols(
+  adl_help ~ i(year, ref = 2018) | class_id,
   data = class_panel,
   cluster = ~class_id
 )
@@ -163,6 +182,7 @@ tidy_event <- function(model, outcome) {
 
 class_change <- bind_rows(
   tidy_event(model_srh, "Poor self-rated health"),
+  tidy_event(model_adl, "Need help with activities of daily living"),
   tidy_event(model_dep, "Common 9-item depressive symptom score")
 )
 fwrite(class_change, file.path(path_tables, "r_class_longitudinal_changes.csv"))
@@ -172,6 +192,7 @@ raw_trends <- class_long |>
   summarise(
     n = n_distinct(class_id),
     poor_srh = mean(poor_srh, na.rm = TRUE),
+    adl_help = mean(adl_help, na.rm = TRUE),
     depression9 = mean(depression9, na.rm = TRUE),
     .groups = "drop"
   )
@@ -226,26 +247,54 @@ m1 <- hlme(
 )
 if (m1$conv != 1) stop("The one-class CLASS LCGA did not converge.")
 
-models <- list(`1` = m1)
-for (k in 2:5) {
-  cat("Fitting CLASS depression trajectory:", k, "classes\n")
-  model_k <- gridsearch(
-    rep = 10,
-    maxiter = 30,
-    minit = m1,
-    hlme(
-      fixed = depression9 ~ time,
-      mixture = ~ time,
-      random = ~ -1,
-      subject = "ID_num",
-      ng = k,
-      nwg = FALSE,
-      data = traj,
-      maxiter = 500,
-      verbose = FALSE
-    )
+fit_class_candidate <- function(k) {
+  fit_call <- substitute(
+    gridsearch(
+      rep = 10,
+      maxiter = 30,
+      minit = m1,
+      cl = n_cores,
+      hlme(
+        fixed = depression9 ~ time,
+        mixture = ~ time,
+        random = ~ -1,
+        subject = "ID_num",
+        ng = K,
+        nwg = FALSE,
+        data = traj,
+        maxiter = 500,
+        verbose = FALSE
+      )
+    ),
+    list(K = as.integer(k))
   )
-  models[[as.character(k)]] <- model_k
+  eval(fit_call)
+}
+
+cache_signature <- paste0(
+  "age65_n", n_distinct(traj$ID_num),
+  "_o", nrow(traj),
+  "_lcmm", as.character(packageVersion("lcmm"))
+)
+cache_file <- file.path(
+  path_models, paste0("r_class_lcga_candidate_cache_", cache_signature, ".rds")
+)
+models <- list(`1` = m1)
+if (file.exists(cache_file)) {
+  cached <- readRDS(cache_file)
+  if (is.list(cached)) {
+    models[names(cached)] <- cached
+    models[["1"]] <- m1
+  }
+}
+for (k in 2:5) {
+  if (!is.null(models[[as.character(k)]])) {
+    cat("Using cached CLASS depression trajectory:", k, "classes\n")
+    next
+  }
+  cat("Fitting CLASS depression trajectory:", k, "classes\n")
+  models[[as.character(k)]] <- fit_class_candidate(k)
+  saveRDS(models, cache_file)
 }
 
 diagnostics <- bind_rows(lapply(names(models), function(k) {
@@ -342,23 +391,28 @@ assoc_m1 <- hlme(
   maxiter = 500,
   verbose = FALSE
 )
-association_model <- gridsearch(
-  rep = 10,
-  maxiter = 30,
-  minit = assoc_m1,
-  hlme(
-    fixed = depression9 ~ time,
-    mixture = ~ time,
-    random = ~ -1,
-    classmb = ~ age5 + female + education + poor_srh_2018,
-    subject = "ID_num",
-    ng = selected_k,
-    nwg = FALSE,
-    data = assoc_traj,
-    maxiter = 500,
-    verbose = FALSE
-  )
+association_call <- substitute(
+  gridsearch(
+    rep = 10,
+    maxiter = 30,
+    minit = assoc_m1,
+    cl = n_cores,
+    hlme(
+      fixed = depression9 ~ time,
+      mixture = ~ time,
+      random = ~ -1,
+      classmb = ~ age5 + female + education + poor_srh_2018,
+      subject = "ID_num",
+      ng = K,
+      nwg = FALSE,
+      data = assoc_traj,
+      maxiter = 500,
+      verbose = FALSE
+    )
+  ),
+  list(K = as.integer(selected_k))
 )
+association_model <- eval(association_call)
 if (association_model$conv != 1) {
   stop("The CLASS baseline-factor latent-class regression did not converge.")
 }
@@ -447,7 +501,11 @@ fwrite(association_results,
 
 saveRDS(
   list(
-    longitudinal_models = list(poor_srh = model_srh, depression9 = model_dep),
+    longitudinal_models = list(
+      poor_srh = model_srh,
+      adl_help = model_adl,
+      depression9 = model_dep
+    ),
     trajectory_models = models,
     selected_k = selected_k,
     selected_model = selected,
