@@ -9,10 +9,13 @@
 *.rar
 *.7z
 
-# Results and figures (禁止上传)
+# Results, figures, manuscripts, audits (禁止上传)
 07_results/
 08_manuscript/
 09_supplement/
+01_database_audit/
+02_policy_mapping/
+03_data_dictionary/
 
 # Clean/analysis data
 04_clean_data/
