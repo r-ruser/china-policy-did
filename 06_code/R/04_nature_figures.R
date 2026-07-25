@@ -565,71 +565,27 @@ p_bic <- ggplot(bic_compare, aes(classes, BIC)) +
     strip.text = element_text(size = 6.5)
   )
 
-stability_display <- trajectory_stability |>
-  mutate(
-    bic1 = format(round(delta_BIC_vs_1class), big.mark = ","),
-    bic2 = format(round(delta_BIC_vs_2class), big.mark = ","),
-    entropy_text = sprintf("%.3f", entropy),
-    class_text = sprintf("%.1f%%", minimum_class_pct),
-    mpp_text = sprintf(
-      "%.3f-%.3f", minimum_mean_posterior, maximum_mean_posterior
-    ),
-    summary = paste0(
-      "Delta BIC: ", bic1, " vs 1 class; ", bic2, " vs 2 classes",
-      "\nEntropy ", entropy_text, "; smallest class ", class_text,
-      "\nClass-specific MPP ", mpp_text
-    ),
-    y = c(2.25, 1.10)
-  )
-p_stability <- ggplot() +
-  annotate(
-    "rect", xmin = 0.08, xmax = 0.92, ymin = 1.72, ymax = 2.80,
-    fill = palette[["grey_light"]], colour = NA
-  ) +
-  annotate(
-    "rect", xmin = 0.08, xmax = 0.92, ymin = 0.57, ymax = 1.65,
-    fill = palette[["grey_light"]], colour = NA
-  ) +
-  geom_text(
-    data = stability_display,
-    aes(x = 0.5, y = y + 0.34, label = cohort),
-    fontface = "bold", size = 2.8
-  ) +
-  geom_text(
-    data = stability_display,
-    aes(x = 0.5, y = y - 0.10, label = summary),
-    size = 2.25, lineheight = 1.10
-  ) +
-  annotate(
-    "text", x = 0.5, y = 0.22,
-    label = "Both models converged; all classes >=15%; all MPP >=0.80.",
-    size = 2.05, colour = palette[["grey_dark"]]
-  ) +
-  coord_cartesian(xlim = c(0, 1), ylim = c(0, 2.9), clip = "off") +
-  labs(
-    title = "Classification stability",
-    subtitle = "Positive Delta BIC favours the selected three-class model"
-  ) +
-  theme_void(base_family = "Arial") +
-  theme(
-    plot.title = element_text(size = 8, face = "bold", hjust = 0),
-    plot.subtitle = element_text(
-      size = 6.5, colour = palette[["grey_dark"]], hjust = 0
-    ),
-    plot.margin = margin(7, 8, 7, 8)
-  )
-
 p_class_a_combined <- p_class_a +
   labs(
     title = "CLASS depressive-symptom trajectories",
-    subtitle = "Three independent post-policy waves; class means with 95% CI"
+    subtitle = paste0(
+      "Three post-policy waves; class means with 95% CI\n",
+      "Lower scores are more favourable"
+    ),
+    colour = NULL
   ) +
+  guides(colour = guide_legend(title = NULL)) +
   theme(legend.position = "bottom")
 p_charls_combined <- p4a +
   labs(
     title = "CHARLS cognitive trajectories",
-    subtitle = "Four waves spanning 2011-2018; class means with 95% CI"
+    subtitle = paste0(
+      "Four waves spanning 2011-2018; class means with 95% CI\n",
+      "Higher scores are more favourable"
+    ),
+    colour = NULL
   ) +
+  guides(colour = guide_legend(title = NULL)) +
   theme(legend.position = "bottom")
 p_class_change_combined <- p_class_b +
   labs(title = "CLASS post-policy health changes")
@@ -638,24 +594,27 @@ fig2_combined <- (
   p_class_a_combined + p_charls_combined +
     plot_layout(widths = c(1, 1))
 ) / (
-  p_class_change_combined + p_bic + p_stability +
-    plot_layout(widths = c(0.9, 0.75, 1.15))
+  p_class_change_combined + p_bic +
+    plot_layout(widths = c(1, 1))
 ) +
-  plot_layout(heights = c(1.35, 1)) +
+  plot_layout(heights = c(1.25, 1)) +
   plot_annotation(
     title = "Heterogeneous health trajectories in Chinese adults aged 65 years or older",
     subtitle = paste0(
-      "Independent LCGA in CLASS and CHARLS identified stable three-class ",
-      "solutions; outcomes differ and were not pooled across cohorts."
+      "Blue, green and red consistently denote more favourable, intermediate ",
+      "and less favourable patterns, respectively."
     ),
     caption = paste0(
-      "Delta BIC is the reduction in BIC relative to a simpler model; positive ",
-      "values support heterogeneity. MPP, mean posterior probability. Classes ",
-      "are descriptive and are not policy exposures."
+      "Both three-class models converged. CLASS: Delta BIC vs one-/two-class = ",
+      "3,971/776; entropy = 0.650; smallest class = 16.1%; MPP = 0.803-0.884.\n",
+      "CHARLS: Delta BIC vs one-/two-class = 3,658/563; entropy = 0.704; ",
+      "smallest class = 15.2%; MPP = 0.814-0.890.\n",
+      "Outcomes differ and were not pooled; classes are descriptive and are ",
+      "not policy exposures."
     ),
     tag_levels = "a"
   )
-save_pub_r(fig2_combined, "Figure2_combined_trajectory_heterogeneity", 183, 180)
+save_pub_r(fig2_combined, "Figure2_combined_trajectory_heterogeneity", 183, 175)
 
 # Figure 4: one-step baseline-factor associations with latent trajectory
 # membership. Classification uncertainty is retained in the likelihood, and
