@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 
 scripts <- c(
+  "06_code/R/00_gbd2021_context.R",
   "06_code/R/01_epi_corrected_analysis.R",
   "06_code/R/02_class_primary_analysis.R",
   "06_code/R/03_charls_trajectory_lcga.R",

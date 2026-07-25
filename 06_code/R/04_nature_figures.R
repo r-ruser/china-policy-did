@@ -82,10 +82,6 @@ save_pub_r <- function(plot, filename, width_mm = 183, height_mm = 120,
                    system_fonts = list(Arial = "Arial"))
   print(plot)
   dev.off()
-  grDevices::cairo_pdf(paste0(base, ".pdf"), width = w, height = h,
-                       family = "Arial")
-  print(plot)
-  dev.off()
   ragg::agg_tiff(paste0(base, ".tiff"), width = w, height = h,
                  units = "in", res = dpi, compression = "lzw")
   print(plot)
@@ -196,7 +192,7 @@ fig1 <- p1a + p1b +
     caption = "All participants were aged 65 years or older in 2015; the contrast compares age 75+ with age 65–74. Baseline-free samples are used only for incident outcomes.",
     tag_levels = "a"
   )
-save_pub_r(fig1, "Figure1_CHARLS_corrected_DID", 183, 105)
+save_pub_r(fig1, "Figure2_CHARLS_corrected_DID", 183, 105)
 
 # Supplementary Figure 1 contract:
 # Core conclusion: CFPS pilot-area contrasts have observable pre-policy
@@ -389,7 +385,7 @@ p3 <- charls_ddd |>
     subtitle = "Exploratory heterogeneity, not condition-specific policy effects",
     caption = "Modifiers are defined at the 2015 baseline; person-clustered standard errors. P values are adjusted across five modifiers using the Benjamini-Hochberg FDR."
   )
-save_pub_r(p3, "Figure3_CHARLS_DDD_heterogeneity", 120, 82)
+save_pub_r(p3, "Figure4_CHARLS_DDD_heterogeneity", 120, 82)
 
 # Figure 4 contract:
 # Core conclusion: a small set of reproducible longitudinal cognitive patterns
@@ -614,7 +610,7 @@ fig2_combined <- (
     ),
     tag_levels = "a"
   )
-save_pub_r(fig2_combined, "Figure2_combined_trajectory_heterogeneity", 183, 175)
+save_pub_r(fig2_combined, "Figure3_combined_trajectory_heterogeneity", 183, 175)
 
 # Figure 4: one-step baseline-factor associations with latent trajectory
 # membership. Classification uncertainty is retained in the likelihood, and
@@ -683,6 +679,6 @@ p5 <- ggplot(assoc, aes(odds_ratio, predictor_label, colour = fdr_status)) +
     strip.text = element_text(size = 6.4, lineheight = 0.95),
     axis.text.y = element_text(size = 6.5)
   )
-save_pub_r(p5, "Figure4_trajectory_class_associations", 183, 118)
+save_pub_r(p5, "Figure5_trajectory_class_associations", 183, 118)
 
 cat("All Nature-style figures exported to:", path_figures, "\n")
