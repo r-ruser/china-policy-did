@@ -1,0 +1,46 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#FFFFFF",
+    "primaryColor": "#FFFFFF",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#777777",
+    "lineColor": "#777777",
+    "fontFamily": "Arial",
+    "fontSize": "16px"
+  },
+  "flowchart": {
+    "htmlLabels": true,
+    "curve": "basis",
+    "nodeSpacing": 42,
+    "rankSpacing": 54,
+    "diagramPadding": 12,
+    "useMaxWidth": false
+  }
+}}%%
+
+flowchart TB
+  S["Study sample selection"] --> T["Triangulated analysis of<br/>CHARLS, CLASS, and CFPS"]
+
+  T -.-> A["A. CHARLS"]
+  T -.-> B["B. CLASS"]
+  T -.-> C["C. CFPS"]
+
+  A --> A1["Source cohort<br/>2015 participants aged ≥65 years<br/>n=6,495"]
+  A1 --> A2["Analytic eligibility<br/>Required waves and<br/>complete outcome data"]
+  A2 --> A3["Primary longitudinal analysis<br/>Incident ADL n=4,292; depression n=2,863<br/>poor self-rated health n=4,627<br/>CESD-10 n=4,491; cognition n=2,718"]
+  A2 --> A4["Cognitive LCGA<br/>n=3,395 participants<br/>11,931 observations<br/>baseline low cognition retained"]
+
+  B --> B1["Source cohort<br/>2018 n=9,357; 2020 n=7,245<br/>2023 n=3,851"]
+  B1 --> B2["Analytic eligibility<br/>2018 baseline age ≥65 years<br/>at least two observed waves"]
+  B2 --> B3["Primary longitudinal analysis<br/>ADL help, depressive symptoms,<br/>and poor self-rated health<br/>repeated cohort n=7,245"]
+  B2 --> B4["Depressive-symptom LCGA<br/>n=6,822 participants<br/>three stable classes<br/>baseline symptoms retained"]
+
+  C --> C1["Source cohort<br/>Fixed 2014 baseline cohort<br/>aged ≥65 years"]
+  C1 --> C2["Analytic eligibility<br/>Valid pilot-area mapping, comparable<br/>outcomes, and complete design data"]
+  C2 --> C3["Primary health analysis<br/>DID n=3,509; age 75+ DDD n=5,428<br/>high-need DDD n=5,076"]
+  C2 --> C4["Secondary employment analysis<br/>DID n=3,556; age 75+ DDD n=3,735"]
+
+  classDef box fill:#FFFFFF,stroke:#777777,stroke-width:1px,color:#111111;
+  class S,T,A,B,C,A1,A2,A3,A4,B1,B2,B3,B4,C1,C2,C3,C4 box;
+  linkStyle default stroke:#777777,stroke-width:1.15px;

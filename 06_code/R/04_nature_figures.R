@@ -280,7 +280,7 @@ class_order <- class_profiles |>
   arrange(mean_score) |>
   pull(class_label)
 class_palette <- setNames(
-  c(palette[["teal"]], palette[["orange"]], palette[["red"]],
+  c(palette[["navy"]], palette[["teal"]], palette[["red"]],
     palette[["purple"]], palette[["navy"]])[seq_along(class_order)],
   class_order
 )
@@ -370,16 +370,6 @@ p_class_c <- class_selection |>
     title = "Trajectory-model diagnostics",
     subtitle = paste0(class_selected_k, "-class primary solution (green)")
   )
-
-fig2 <- p_class_a + (p_class_b / p_class_c) +
-  plot_layout(widths = c(1.5, 1)) +
-  plot_annotation(
-    title = "CLASS: health trajectories among adults aged 65 years or older, 2018-2023",
-    subtitle = "Primary longitudinal validation; all waves are post-policy and do not identify a policy effect.",
-    caption = "The depressive-symptom score uses nine identically worded items across all three waves; positive-affect items are reverse scored.",
-    tag_levels = "a"
-  )
-save_pub_r(fig2, "Figure2_CLASS_primary_longitudinal_trajectories", 183, 118)
 
 # Figure 3: CHARLS DDD heterogeneity.
 p3 <- charls_ddd |>
@@ -492,17 +482,182 @@ p4c <- quality |>
   ) +
   theme(legend.position = "bottom")
 
-fig4 <- p4a + (p4b / p4c) +
-  plot_layout(widths = c(1.5, 1)) +
+# Combined Figure 2: both independently estimated cohort trajectories plus
+# within-cohort evidence for heterogeneity and classification stability.
+summarise_trajectory_stability <- function(cohort, outcome, diagnostics,
+                                           class_quality, selected_k) {
+  selected_row <- diagnostics |> filter(classes == selected_k)
+  data.frame(
+    cohort = cohort,
+    outcome = outcome,
+    selected_classes = selected_k,
+    selected_converged = selected_row$convergence == 1,
+    BIC_1class = diagnostics$BIC[diagnostics$classes == 1],
+    BIC_2class = diagnostics$BIC[diagnostics$classes == 2],
+    BIC_selected = selected_row$BIC,
+    delta_BIC_vs_1class =
+      diagnostics$BIC[diagnostics$classes == 1] - selected_row$BIC,
+    delta_BIC_vs_2class =
+      diagnostics$BIC[diagnostics$classes == 2] - selected_row$BIC,
+    entropy = selected_row$entropy,
+    minimum_class_pct = 100 * min(class_quality$proportion),
+    minimum_mean_posterior = min(class_quality$mean_posterior),
+    maximum_mean_posterior = max(class_quality$mean_posterior),
+    all_class_mean_posterior_ge_070 =
+      all(class_quality$mean_posterior >= 0.70),
+    stable_solution = selected_row$convergence == 1 &&
+      min(class_quality$proportion) >= 0.10 &&
+      all(class_quality$mean_posterior >= 0.70)
+  )
+}
+
+trajectory_stability <- bind_rows(
+  summarise_trajectory_stability(
+    "CLASS", "Depressive symptoms", class_selection, class_quality,
+    class_selected_k
+  ),
+  summarise_trajectory_stability(
+    "CHARLS", "Cognition", selection, quality, charls_selected_k
+  )
+)
+fwrite(
+  trajectory_stability,
+  file.path(path_tables, "r_trajectory_heterogeneity_stability.csv")
+)
+
+bic_compare <- bind_rows(
+  class_selection |> mutate(cohort = "CLASS"),
+  selection |> mutate(cohort = "CHARLS")
+) |>
+  group_by(cohort) |>
+  mutate(
+    selected_k = ifelse(cohort == "CLASS", class_selected_k,
+                        charls_selected_k),
+    status = case_when(
+      classes == selected_k ~ "Selected 3-class",
+      minimum_class_pct < 10 ~ "Inadmissible: class <10%",
+      TRUE ~ "Alternative"
+    )
+  ) |>
+  ungroup()
+
+p_bic <- ggplot(bic_compare, aes(classes, BIC)) +
+  geom_line(linewidth = 0.5, colour = palette[["grey_dark"]]) +
+  geom_point(aes(colour = status), size = 1.8) +
+  facet_wrap(~cohort, scales = "free_y", ncol = 1) +
+  scale_colour_manual(
+    values = c(
+      "Selected 3-class" = palette[["teal"]],
+      "Alternative" = palette[["grey_mid"]],
+      "Inadmissible: class <10%" = palette[["red"]]
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(
+    x = "Number of classes",
+    y = "BIC",
+    title = "Within-cohort heterogeneity evidence",
+    subtitle = "Green: selected; red: solution containing a class <10%"
+  ) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 6.5)
+  )
+
+stability_display <- trajectory_stability |>
+  mutate(
+    bic1 = format(round(delta_BIC_vs_1class), big.mark = ","),
+    bic2 = format(round(delta_BIC_vs_2class), big.mark = ","),
+    entropy_text = sprintf("%.3f", entropy),
+    class_text = sprintf("%.1f%%", minimum_class_pct),
+    mpp_text = sprintf(
+      "%.3f-%.3f", minimum_mean_posterior, maximum_mean_posterior
+    ),
+    summary = paste0(
+      "Delta BIC: ", bic1, " vs 1 class; ", bic2, " vs 2 classes",
+      "\nEntropy ", entropy_text, "; smallest class ", class_text,
+      "\nClass-specific MPP ", mpp_text
+    ),
+    y = c(2.25, 1.10)
+  )
+p_stability <- ggplot() +
+  annotate(
+    "rect", xmin = 0.08, xmax = 0.92, ymin = 1.72, ymax = 2.80,
+    fill = palette[["grey_light"]], colour = NA
+  ) +
+  annotate(
+    "rect", xmin = 0.08, xmax = 0.92, ymin = 0.57, ymax = 1.65,
+    fill = palette[["grey_light"]], colour = NA
+  ) +
+  geom_text(
+    data = stability_display,
+    aes(x = 0.5, y = y + 0.34, label = cohort),
+    fontface = "bold", size = 2.8
+  ) +
+  geom_text(
+    data = stability_display,
+    aes(x = 0.5, y = y - 0.10, label = summary),
+    size = 2.25, lineheight = 1.10
+  ) +
+  annotate(
+    "text", x = 0.5, y = 0.22,
+    label = "Both models converged; all classes >=15%; all MPP >=0.80.",
+    size = 2.05, colour = palette[["grey_dark"]]
+  ) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 2.9), clip = "off") +
+  labs(
+    title = "Classification stability",
+    subtitle = "Positive Delta BIC favours the selected three-class model"
+  ) +
+  theme_void(base_family = "Arial") +
+  theme(
+    plot.title = element_text(size = 8, face = "bold", hjust = 0),
+    plot.subtitle = element_text(
+      size = 6.5, colour = palette[["grey_dark"]], hjust = 0
+    ),
+    plot.margin = margin(7, 8, 7, 8)
+  )
+
+p_class_a_combined <- p_class_a +
+  labs(
+    title = "CLASS depressive-symptom trajectories",
+    subtitle = "Three independent post-policy waves; class means with 95% CI"
+  ) +
+  theme(legend.position = "bottom")
+p_charls_combined <- p4a +
+  labs(
+    title = "CHARLS cognitive trajectories",
+    subtitle = "Four waves spanning 2011-2018; class means with 95% CI"
+  ) +
+  theme(legend.position = "bottom")
+p_class_change_combined <- p_class_b +
+  labs(title = "CLASS post-policy health changes")
+
+fig2_combined <- (
+  p_class_a_combined + p_charls_combined +
+    plot_layout(widths = c(1, 1))
+) / (
+  p_class_change_combined + p_bic + p_stability +
+    plot_layout(widths = c(0.9, 0.75, 1.15))
+) +
+  plot_layout(heights = c(1.35, 1)) +
   plot_annotation(
-    title = "CHARLS cognitive trajectory classes among adults aged 65 years or older",
-    subtitle = "Latent class growth analysis (1–4 classes); classes are descriptive summaries, not causal exposures.",
-    caption = "Cognition combines immediate recall, orientation and serial-7 scores (0–19), standardised to the 2011 distribution.",
+    title = "Heterogeneous health trajectories in Chinese adults aged 65 years or older",
+    subtitle = paste0(
+      "Independent LCGA in CLASS and CHARLS identified stable three-class ",
+      "solutions; outcomes differ and were not pooled across cohorts."
+    ),
+    caption = paste0(
+      "Delta BIC is the reduction in BIC relative to a simpler model; positive ",
+      "values support heterogeneity. MPP, mean posterior probability. Classes ",
+      "are descriptive and are not policy exposures."
+    ),
     tag_levels = "a"
   )
-save_pub_r(fig4, "Figure4_CHARLS_LCGA_trajectories", 183, 112)
+save_pub_r(fig2_combined, "Figure2_combined_trajectory_heterogeneity", 183, 180)
 
-# Figure 5: one-step baseline-factor associations with latent trajectory
+# Figure 4: one-step baseline-factor associations with latent trajectory
 # membership. Classification uncertainty is retained in the likelihood, and
 # multiplicity is controlled within each class contrast.
 assoc_class <- fread(file.path(path_tables, "r_class_lcga_associations.csv")) |>
@@ -569,6 +724,6 @@ p5 <- ggplot(assoc, aes(odds_ratio, predictor_label, colour = fdr_status)) +
     strip.text = element_text(size = 6.4, lineheight = 0.95),
     axis.text.y = element_text(size = 6.5)
   )
-save_pub_r(p5, "Figure5_trajectory_class_associations", 183, 118)
+save_pub_r(p5, "Figure4_trajectory_class_associations", 183, 118)
 
 cat("All Nature-style figures exported to:", path_figures, "\n")

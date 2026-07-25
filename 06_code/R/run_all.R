@@ -4,7 +4,8 @@ scripts <- c(
   "06_code/R/01_epi_corrected_analysis.R",
   "06_code/R/02_class_primary_analysis.R",
   "06_code/R/03_charls_trajectory_lcga.R",
-  "06_code/R/04_nature_figures.R"
+  "06_code/R/04_nature_figures.R",
+  "06_code/R/05_supplementary_flowchart.R"
 )
 
 for (script in scripts) {
