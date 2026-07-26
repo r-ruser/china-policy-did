@@ -196,10 +196,10 @@ save_pub_r(fig1, "Figure2_CHARLS_corrected_DID", 183, 105)
 
 # Supplementary Figure 1 contract:
 # Core conclusion: CFPS pilot-area contrasts have observable pre-policy
-# deviations; health and labor DDD results remain exploratory.
+# deviations; health DDD results remain exploratory.
 simple_event <- cfps_event |>
   filter(analysis == "CFPS pilot-area event study") |>
-  mutate(outcome = factor(outcome, levels = c("Poor self-rated health", "Employment")))
+  mutate(outcome = factor(outcome, levels = "Poor self-rated health"))
 p2a <- ggplot(simple_event, aes(year, estimate, colour = outcome)) +
   geom_hline(yintercept = 0, linetype = "22", linewidth = 0.35,
              colour = palette["grey_mid"]) +
@@ -211,8 +211,7 @@ p2a <- ggplot(simple_event, aes(year, estimate, colour = outcome)) +
   geom_point(size = 1.8) +
   facet_wrap(~outcome, scales = "free_x") +
   scale_colour_manual(values = c(
-    "Poor self-rated health" = palette[["red"]],
-    "Employment" = palette[["navy"]]
+    "Poor self-rated health" = palette[["red"]]
   ), guide = "none") +
   scale_x_continuous(breaks = c(2010, 2012, 2014, 2018)) +
   scale_y_continuous(labels = label_percent(accuracy = 0.1)) +
@@ -226,13 +225,11 @@ ddd_plot <- main |>
   filter(grepl("DDD", analysis)) |>
   mutate(
     label = case_when(
-      analysis == "CFPS labor DDD" ~ "Employment: age 75+",
       grepl("Age 75\\+", estimand) & !grepl("or", estimand) ~ "Poor SRH: age 75+",
       TRUE ~ "Poor SRH: high-need combined"
     ),
     label = factor(label, levels = rev(c(
-      "Poor SRH: age 75+", "Poor SRH: high-need combined",
-      "Employment: age 75+"
+      "Poor SRH: age 75+", "Poor SRH: high-need combined"
     )))
   )
 p2b <- ggplot(ddd_plot, aes(estimate, label)) +
@@ -253,7 +250,7 @@ p2b <- ggplot(ddd_plot, aes(estimate, label)) +
 fig_s1 <- p2a / p2b +
   plot_layout(heights = c(1.25, 0.9)) +
   plot_annotation(
-    title = "CFPS: pilot-area health and labor contrasts",
+    title = "CFPS: pilot-area health contrasts",
     subtitle = "Individual and year fixed effects; standard errors clustered by city.",
     caption = "The 2010 self-rated-health series is excluded because its response coding is not comparable with later waves.",
     tag_levels = "a"

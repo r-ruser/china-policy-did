@@ -12,31 +12,31 @@ nodes <- data.frame(
     "S", "T",
     "A", "A1", "A2", "A3", "A4",
     "B", "B1", "B2", "B3", "B4",
-    "C", "C1", "C2", "C3", "C4"
+    "C", "C1", "C2", "C3"
   ),
   x = c(
     6, 6,
     2, 2, 2, 1.05, 2.95,
     6, 6, 6, 5.05, 6.95,
-    10, 10, 10, 9.05, 10.95
+    10, 10, 10, 10
   ),
   y = c(
     10.05, 8.80,
     7.50, 6.10, 4.65, 2.40, 2.40,
     7.50, 6.10, 4.65, 2.40, 2.40,
-    7.50, 6.10, 4.65, 2.40, 2.40
+    7.50, 6.10, 4.65, 2.40
   ),
   width = c(
     1.80, 2.05,
     1.55, 2.55, 2.55, 1.78, 1.78,
     1.55, 2.55, 2.55, 1.78, 1.78,
-    1.55, 2.55, 2.55, 1.78, 1.78
+    1.55, 2.55, 2.55, 2.55
   ),
   height = c(
     0.62, 0.98,
     0.66, 1.05, 1.05, 1.72, 1.72,
     0.66, 1.05, 1.05, 1.72, 1.72,
-    0.66, 1.05, 1.05, 1.72, 1.72
+    0.66, 1.05, 1.05, 1.72
   ),
   label = c(
     "Study sample selection",
@@ -54,8 +54,7 @@ nodes <- data.frame(
     "C.  CFPS",
     "Source cohort\nFixed 2014 baseline cohort\naged 65 years or older",
     "Analytic eligibility\nValid pilot-area mapping, comparable\noutcomes, and complete design data",
-    "Primary health analysis\nDID n = 3,509\nage 75+ DDD n = 5,428\nhigh-need DDD n = 5,076",
-    "Secondary employment analysis\nDID n = 3,556\nage 75+ DDD n = 3,735"
+    "Primary health analysis\nDID n = 3,509\nage 75+ DDD n = 5,428\nhigh-need DDD n = 5,076"
   ),
   stringsAsFactors = FALSE
 )
@@ -81,7 +80,7 @@ solid_edges <- do.call(
       c("S", "T"),
       c("A", "A1"), c("A1", "A2"), c("A2", "A3"), c("A2", "A4"),
       c("B", "B1"), c("B1", "B2"), c("B2", "B3"), c("B2", "B4"),
-      c("C", "C1"), c("C1", "C2"), c("C2", "C3"), c("C2", "C4")
+      c("C", "C1"), c("C1", "C2"), c("C2", "C3")
     ),
     function(pair) edge(pair[1], pair[2])
   )

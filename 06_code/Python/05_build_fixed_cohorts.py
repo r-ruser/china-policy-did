@@ -131,9 +131,6 @@ for wave, path in cleaned_files.items():
     df.loc[df['dw_clean'] == 79, 'dw_clean'] = np.nan
     df['activity_limitation'] = (df['dw_clean'] <= 2).astype(int)  # 1=limited
 
-    # Employment
-    df['employed'] = pd.to_numeric(df['job'], errors='coerce')
-
     # Family ID
     fid_var = f'fid{wave}' if f'fid{wave}' in df.columns else [c for c in df.columns if c.startswith('fid')][0]
     df['fid'] = df[fid_var]
@@ -155,18 +152,10 @@ df14['baseline_poor_srh'] = df14['poor_srh']
 df14['baseline_dw'] = df14['dw_clean']
 df14['baseline_female'] = df14['female']
 
-# Family-level: does family have 60+ member in 2014?
-family_60plus_2014 = df14[df14['baseline_age'] >= 60].groupby('fid').size()
-df14['older_household_2014'] = df14['fid'].map(family_60plus_2014).fillna(0).astype(int)
-df14['older_household_2014'] = (df14['older_household_2014'] > 0).astype(int)
-
-# Working age in 2014
-df14['working_age_2014'] = ((df14['baseline_age'] >= 18) & (df14['baseline_age'] <= 59)).astype(int)
-
 # Save 2014 baseline
 baseline_cols = ['pid', 'fid', 'admin_code', 'treat', 'cluster',
                  'baseline_age', 'baseline_srh', 'baseline_poor_srh', 'baseline_dw',
-                 'baseline_female', 'older_household_2014', 'working_age_2014']
+                 'baseline_female']
 df14_base = df14[baseline_cols].copy()
 df14_base.to_parquet(os.path.join(OUTPUT_DIR, 'cfps_2014_baseline.parquet'), index=False)
 print(f"  2014 baseline: {len(df14_base)} individuals")
@@ -184,7 +173,7 @@ for wave, df in wave_data.items():
     df_e = df[df['pid'].isin(elderly_pids)].copy()
     # Merge 2014 baseline
     df_e = df_e.merge(df14_base[['pid', 'baseline_age', 'baseline_srh', 'baseline_poor_srh',
-                                   'baseline_dw', 'baseline_female', 'older_household_2014']],
+                                   'baseline_dw', 'baseline_female']],
                        on='pid', how='left', suffixes=('', '_bl'))
     elderly_dfs.append(df_e)
 
@@ -200,45 +189,13 @@ for wave in [2010, 2012, 2014, 2018, 2020]:
 elderly.to_parquet(os.path.join(OUTPUT_DIR, 'cfps_elderly_cohort.parquet'), index=False)
 
 # ============================================================
-# 5. Build Labor Supply Cohort (18-59, older household 2014)
+# 5. Summary
 # ============================================================
-print("\n[5] Building Labor Supply Cohort...")
-
-# Working age individuals in families that had 60+ member in 2014
-labor_pids = set(df14[(df14['working_age_2014'] == 1) & (df14['older_household_2014'] == 1)]['pid'])
-print(f"  Labor cohort size (18-59, older household 2014): {len(labor_pids)}")
-
-labor_dfs = []
-for wave, df in wave_data.items():
-    df_l = df[df['pid'].isin(labor_pids)].copy()
-    df_l = df_l.merge(df14_base[['pid', 'baseline_age', 'baseline_female', 'older_household_2014']],
-                       on='pid', how='left', suffixes=('', '_bl'))
-    labor_dfs.append(df_l)
-
-labor = pd.concat(labor_dfs, ignore_index=True)
-labor = labor.sort_values(['pid', 'wave']).reset_index(drop=True)
-
-print(f"  Labor cohort panel: {len(labor)} rows, {labor['pid'].nunique()} individuals")
-for wave in [2010, 2012, 2014, 2018, 2020]:
-    sub = labor[labor['wave'] == wave]
-    print(f"    {wave}: {len(sub)} obs, treat={sub['treat'].sum()}, "
-          f"employed={sub['employed'].mean():.3f}")
-
-labor.to_parquet(os.path.join(OUTPUT_DIR, 'cfps_labor_cohort.parquet'), index=False)
-
-# ============================================================
-# 6. Summary
-# ============================================================
-print("\n[6] Summary...")
+print("\n[5] Summary...")
 print(f"\nElderly Health Cohort:")
 print(f"  2014 baseline age >= 60: {len(elderly_pids)}")
 print(f"  Panel rows: {len(elderly)}")
 print(f"  Treat counties: {elderly[elderly['treat']==1]['admin_code'].nunique()}")
-
-print(f"\nLabor Supply Cohort:")
-print(f"  18-59, older household 2014: {len(labor_pids)}")
-print(f"  Panel rows: {len(labor)}")
-print(f"  Treat counties: {labor[labor['treat']==1]['admin_code'].nunique()}")
 
 print("\n" + "=" * 60)
 print("Fixed cohorts built successfully.")

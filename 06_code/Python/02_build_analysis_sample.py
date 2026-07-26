@@ -129,7 +129,6 @@ outcomes = {
     'dw': 'Disability (ADL/IADL)',
     'unhealth': 'Unhealthy status',
     'weak': 'Weakness/frailty',
-    'job': 'Employment',
     'wage': 'Wage income',
     'medsure_dum': 'Medical insurance',
     'mar': 'Marital status',
@@ -156,7 +155,7 @@ for var, desc in outcomes.items():
 # ============================================================
 print("\n[4] Cross-wave comparability...")
 
-for var in ['health', 'dw', 'job']:
+for var in ['health', 'dw']:
     print(f"\n  {var}:")
     for wave in [2010, 2012, 2014, 2018, 2020]:
         df = wave_data[wave]
@@ -190,7 +189,7 @@ print(f"  Panel individuals: {len(panel_pids)}")
 key_vars = ['pid', 'wave', 'admin_code', 'prov_code', 'city_code',
             'treat_area', 'policy_unit_id', 'treat_batch',
             'age', 'gen', 'health', 'dw', 'unhealth', 'weak',
-            'job', 'wage', 'medsure_dum', 'mar', 'urban_std', 'old', 'size']
+            'wage', 'medsure_dum', 'mar', 'urban_std', 'old', 'size']
 
 panel_dfs = []
 for wave, df in wave_data.items():

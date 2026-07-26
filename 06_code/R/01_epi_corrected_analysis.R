@@ -426,12 +426,7 @@ fwrite(ipcw_obj$diagnostics, file.path(path_diag, "charls_ipcw_diagnostics.csv")
 cat("[2] Reading CFPS derived cohorts\n")
 cfps_elderly_path <- file.path(project_root, "05_analysis_data",
                                "cfps_elderly_cohort.csv.gz")
-cfps_panel_path <- file.path(project_root, "05_analysis_data",
-                             "cfps_panel_analysis.csv.gz")
-cfps_baseline_path <- file.path(project_root, "05_analysis_data",
-                                "cfps_2014_baseline.csv.gz")
-stopifnot(file.exists(cfps_elderly_path), file.exists(cfps_panel_path),
-          file.exists(cfps_baseline_path))
+stopifnot(file.exists(cfps_elderly_path))
 
 cfps_elderly <- fread(cfps_elderly_path, encoding = "UTF-8") |>
   mutate(
@@ -553,109 +548,6 @@ for (spec in list(
   }
 }
 
-# CFPS labor: fixed cohort aged 65 years or older in 2014.
-cfps_panel <- fread(cfps_panel_path, encoding = "UTF-8") |>
-  mutate(
-    pid = as.character(pid),
-    wave = as.integer(wave),
-    employed_corrected = ifelse(job %in% c(0, 1), job, NA_real_)
-  )
-cfps_baseline <- fread(cfps_baseline_path, encoding = "UTF-8") |>
-  transmute(
-    pid = as.character(pid),
-    working_age_2014,
-    baseline_age,
-    baseline_female
-  )
-cfps_labor <- cfps_panel |>
-  left_join(cfps_baseline, by = "pid") |>
-  filter(baseline_age >= 65, wave %in% c(2010, 2012, 2014, 2018)) |>
-  mutate(
-    treat = treat_area,
-    city_cluster = city_code,
-    high_age75 = as.integer(baseline_age >= 75),
-    treat_high_age75 = treat * high_age75
-  )
-
-cfps_labor_event <- feols(
-  employed_corrected ~ i(wave, treat, ref = 2014) | pid + wave,
-  data = cfps_labor,
-  cluster = ~city_cluster
-)
-cfps_models$cfps_labor_event <- cfps_labor_event
-cfps_events[[length(cfps_events) + 1L]] <- event_terms(
-  cfps_labor_event, "CFPS pilot-area event study", "Employment",
-  "Pilot area x survey year", "Diagnostic/associational", 2014
-)
-cfps_pretests[[length(cfps_pretests) + 1L]] <- joint_pretrend(
-  cfps_labor_event, c(2010, 2012), "CFPS employment joint pre-trend"
-)
-
-cfps_labor_did_dat <- cfps_labor |>
-  filter(wave %in% c(2014, 2018)) |>
-  mutate(post = as.integer(wave == 2018))
-cfps_labor_did <- feols(
-  employed_corrected ~ treat:post | pid + wave,
-  data = cfps_labor_did_dat,
-  cluster = ~city_cluster
-)
-cfps_models$cfps_labor_did <- cfps_labor_did
-cfps_results[[length(cfps_results) + 1L]] <- tidy_term(
-  cfps_labor_did, "treat:post|post:treat",
-  "CFPS pilot-area DID", "Employment",
-  "Pilot-area difference-in-differences risk difference",
-  "Exploratory/associational",
-  "Fixed cohort aged 65 years or older in 2014; individual and year fixed effects; city-clustered SE."
-)
-
-cfps_labor_ddd <- feols(
-  employed_corrected ~ i(wave, treat, ref = 2014) +
-    i(wave, high_age75, ref = 2014) +
-    i(wave, treat_high_age75, ref = 2014) | pid + wave,
-  data = cfps_labor,
-  cluster = ~city_cluster
-)
-cfps_models$cfps_labor_ddd <- cfps_labor_ddd
-labor_ddd_event <- event_terms(
-  cfps_labor_ddd, "CFPS labor DDD event study", "Employment",
-  "Pilot area x age 75+ x survey year",
-  "Exploratory triple difference", 2014
-)
-labor_ddd_event <- labor_ddd_event[
-  labor_ddd_event$term == "Reference" |
-    grepl("treat_high_age75", labor_ddd_event$term, fixed = TRUE), ]
-cfps_events[[length(cfps_events) + 1L]] <- labor_ddd_event
-cfps_pretests[[length(cfps_pretests) + 1L]] <- joint_pretrend(
-  cfps_labor_ddd, c(2010, 2012),
-  "CFPS employment DDD (age 75+) joint pre-trend"
-)
-
-ct_labor <- as.data.frame(coeftable(cfps_labor_ddd))
-ct_labor$term <- rownames(ct_labor)
-target_labor <- ct_labor[grepl("::2018", ct_labor$term) &
-                           grepl("treat_high_age75", ct_labor$term,
-                                 fixed = TRUE), , drop = FALSE]
-if (nrow(target_labor) == 1L) {
-  est <- target_labor[[1]][1]
-  se_ <- target_labor[[2]][1]
-  cfps_results[[length(cfps_results) + 1L]] <- data.frame(
-    analysis = "CFPS labor DDD",
-    outcome = "Employment",
-    estimand = "2018 triple difference: pilot area x age 75+",
-    term = target_labor$term,
-    estimate = est,
-    std_error = se_,
-    conf_low = est - 1.96 * se_,
-    conf_high = est + 1.96 * se_,
-    p_value = target_labor[[4]][1],
-    n_obs = nobs(cfps_labor_ddd),
-    n_id = n_distinct(cfps_labor$pid),
-    evidence_grade = "Exploratory triple difference",
-    notes = "Fixed cohort aged 65 years or older in 2014; pre-trend joint test required before interpretation.",
-    stringsAsFactors = FALSE
-  )
-}
-
 # -------------------------------------------------------------------------
 # Descriptive trends and database provenance
 # -------------------------------------------------------------------------
@@ -681,14 +573,6 @@ cfps_health_trends <- cfps_elderly_main |>
     .groups = "drop"
   )
 
-cfps_labor_trends <- cfps_labor |>
-  group_by(wave, treat, high_age75) |>
-  summarise(
-    n = n_distinct(pid),
-    employment = mean(employed_corrected, na.rm = TRUE),
-    .groups = "drop"
-  )
-
 database_inventory <- data.frame(
   database = c("CHARLS", "CFPS", "CLDS", "CLASS", "CHFS", "Provincial GDP"),
   configured_or_referenced = c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE),
@@ -702,7 +586,7 @@ database_inventory <- data.frame(
   ),
   role_in_corrected_pipeline = c(
     "Nationwide target-group differential-change analysis; event-study diagnostics; DDD heterogeneity; trajectory input",
-    "Pilot-area DID and DDD for health and employment",
+    "Pilot-area DID and DDD for poor self-rated health",
     "Existing code performs availability/geography audit only; no defensible outcome model in current workspace",
     "Primary post-policy longitudinal validation (2018-2023) and depressive-symptom trajectory classification",
     "Configured in legacy R settings but not used in any verified model",
@@ -725,7 +609,6 @@ main_results <- bind_rows(charls_results, cfps_results) |>
       analysis == "CFPS pilot-area DDD" &
         outcome == "Poor self-rated health" ~
         "CFPS poor-self-rated-health high-need DDD",
-      analysis == "CFPS labor DDD" ~ "CFPS employment DDD",
       TRUE ~ NA_character_
     ),
     p_fdr = NA_real_
@@ -752,7 +635,6 @@ fwrite(pretrend_results, file.path(path_diag, "r_parallel_trend_tests.csv"))
 fwrite(charls_ddd_results, file.path(path_tables, "r_charls_ddd_results.csv"))
 fwrite(charls_trends, file.path(path_tables, "r_charls_raw_trends.csv"))
 fwrite(cfps_health_trends, file.path(path_tables, "r_cfps_health_raw_trends.csv"))
-fwrite(cfps_labor_trends, file.path(path_tables, "r_cfps_labor_raw_trends.csv"))
 fwrite(database_inventory, file.path(path_tables, "r_database_inventory.csv"))
 
 saveRDS(
