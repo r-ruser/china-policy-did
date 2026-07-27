@@ -30,6 +30,12 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
+# Local manuscript generation and Word files
+06_code/Python/update*_manuscripts.py
+*.docx
+*.docm
+~$*.docx
+
 # R temp files
 *.Rhistory
 .RData
