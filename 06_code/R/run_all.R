@@ -6,7 +6,8 @@ scripts <- c(
   "06_code/R/02_class_primary_analysis.R",
   "06_code/R/03_charls_trajectory_lcga.R",
   "06_code/R/10_v4_required_analyses.R",
-  "06_code/R/13_policy_main_figures.R"
+  "06_code/R/13_policy_main_figures.R",
+  "06_code/R/14_v51_exports_and_figures.R"
 )
 
 for (script in scripts) {
