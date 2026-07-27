@@ -5,8 +5,8 @@ scripts <- c(
   "06_code/R/01_epi_corrected_analysis.R",
   "06_code/R/02_class_primary_analysis.R",
   "06_code/R/03_charls_trajectory_lcga.R",
-  "06_code/R/04_nature_figures.R",
-  "06_code/R/05_supplementary_flowchart.R"
+  "06_code/R/10_v4_required_analyses.R",
+  "06_code/R/13_policy_main_figures.R"
 )
 
 for (script in scripts) {
@@ -19,4 +19,4 @@ for (script in scripts) {
   }
 }
 
-cat("\nFull R pipeline completed successfully.\n")
+cat("\nFull V5 policy-centred R pipeline completed successfully.\n")

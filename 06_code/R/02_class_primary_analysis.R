@@ -156,6 +156,19 @@ eligible_2018_ids <- class_long |>
   distinct(class_id)
 class_long <- semi_join(class_long, eligible_2018_ids, by = "class_id")
 
+# Baseline age group is fixed at the 2018 interview. It is used only to
+# evaluate post-policy age heterogeneity; the age-group main effect is absorbed
+# by individual fixed effects in the longitudinal models below.
+baseline_age_group <- class_long |>
+  filter(year == 2018) |>
+  transmute(
+    class_id,
+    baseline_age_2018 = 2018 - birth_year,
+    age75_2018 = as.integer(2018 - birth_year >= 75)
+  ) |>
+  distinct(class_id, .keep_all = TRUE)
+class_long <- left_join(class_long, baseline_age_group, by = "class_id")
+
 id_counts <- class_long |>
   distinct(class_id, year) |>
   count(class_id, name = "waves_observed")
@@ -230,6 +243,42 @@ class_change <- bind_rows(
   tidy_event(model_dep, "Common 9-item depressive symptom score")
 )
 fwrite(class_change, file.path(path_tables, "r_class_longitudinal_changes.csv"))
+
+# Post-policy age heterogeneity: each coefficient is a within-person change
+# relative to 2018; the baseline age-group main effect is absorbed by person FE.
+class_panel <- class_panel |>
+  mutate(post2020 = as.integer(year == 2020),
+         post2023 = as.integer(year == 2023))
+
+tidy_age_heterogeneity <- function(model, outcome) {
+  ct <- as.data.frame(coeftable(model))
+  ct$term <- rownames(ct)
+  rownames(ct) <- NULL
+  names(ct)[1:4] <- c("estimate", "std_error", "t_value", "p_value")
+  wanted <- c("post2020", "post2023", "post2020:age75_2018", "post2023:age75_2018")
+  ct |>
+    filter(term %in% wanted) |>
+    mutate(outcome = outcome,
+           conf_low = estimate - 1.96 * std_error,
+           conf_high = estimate + 1.96 * std_error) |>
+    select(outcome, term, estimate, std_error, conf_low, conf_high, p_value)
+}
+
+age_specs <- list(c("poor_srh", "Poor self-rated health"),
+                  c("adl_help", "Need help with activities of daily living"),
+                  c("depression9", "Common 9-item depressive symptom score"))
+age_interaction_models <- list()
+class_age_heterogeneity <- bind_rows(lapply(age_specs, function(spec) {
+  fit <- feols(as.formula(paste0(spec[[1]], " ~ post2020 + post2023 + age75_2018:post2020 + age75_2018:post2023 | class_id")),
+               data = class_panel, cluster = ~class_id)
+  age_interaction_models[[spec[[1]]]] <<- fit
+  tidy_age_heterogeneity(fit, spec[[2]])
+})) |>
+  group_by(outcome) |>
+  mutate(p_value_fdr = p.adjust(p_value, method = "BH")) |>
+  ungroup()
+fwrite(class_age_heterogeneity,
+       file.path(path_tables, "r_class_postpolicy_age_heterogeneity.csv"))
 
 raw_trends <- class_long |>
   group_by(year) |>
@@ -548,7 +597,8 @@ saveRDS(
     longitudinal_models = list(
       poor_srh = model_srh,
       adl_help = model_adl,
-      depression9 = model_dep
+      depression9 = model_dep,
+      age_heterogeneity = age_interaction_models
     ),
     trajectory_models = models,
     selected_k = selected_k,
