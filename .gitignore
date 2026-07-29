@@ -48,3 +48,29 @@ desktop.ini
 
 # Log files
 10_logs/
+
+# Markov v6 public/private boundary
+Markov/data/
+Markov/results/
+Markov/r/
+Markov/**/private_outputs/
+
+# Never publish manuscripts, generated results, or rendered figures
+Markov/manuscript/
+Markov/figures/
+Markov/tables/
+Markov/qa/
+Markov/**/figure_input/
+Markov/**/figure_output*/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.tif
+*.tiff
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.log
